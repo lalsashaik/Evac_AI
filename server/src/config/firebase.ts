@@ -113,7 +113,12 @@ export function getFirebaseAuth(): admin.auth.Auth | null {
 }
 
 export function getFirebaseDatabase(): admin.database.Database | null {
-  return firebaseApp ? admin.database(firebaseApp) : null;
+  try {
+    return firebaseApp ? admin.database(firebaseApp) : null;
+  } catch (err: any) {
+    console.warn('[Firebase Admin] Realtime Database access warning:', err.message);
+    return null;
+  }
 }
 
 export function getFirebaseStorage(): admin.storage.Storage | null {

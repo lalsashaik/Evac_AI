@@ -29,8 +29,8 @@ app.use('/api', apiRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Start Server
-if (process.env.NODE_ENV !== 'test') {
+// Start Server (only when not running under test runner)
+if (process.env.NODE_ENV !== 'test' && !process.argv.some(arg => arg.includes('test'))) {
   app.listen(env.port, () => {
     console.log(`[EvacAI Server] Running on http://localhost:${env.port}`);
     console.log(`[EvacAI Server] Health endpoint: http://localhost:${env.port}/health`);

@@ -1,8 +1,9 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Load environment variables from .env file
+// Load environment variables from .env file (supports both server/ and root executions)
 dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 export interface EnvironmentConfig {
   port: number;

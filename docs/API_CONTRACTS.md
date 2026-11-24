@@ -358,8 +358,12 @@ Registers a new camera.
   "name": "Entrance Camera",
   "floorId": "floor_1",
   "roomId": "room_002",
-  "streamType": "esp32cam",
-  "streamUrl": "http://192.168.1.50/stream"
+  "streamType": "simulated",
+  "streamUrl": "/videos/cctv_entrance_sample.mp4",
+  "isActive": true,
+  "x": 0.25,
+  "y": 0.20,
+  "rotation": 0
 }
 ```
 
@@ -370,7 +374,54 @@ Registers a new camera.
   "data": {
     "cameraId": "cam_001",
     "name": "Entrance Camera",
-    "createdAt": "..."
+    "mallId": "mall_XYZ",
+    "floorId": "floor_1",
+    "roomId": "room_002",
+    "streamType": "simulated",
+    "streamUrl": "/videos/cctv_entrance_sample.mp4",
+    "isActive": true,
+    "createdAt": "...",
+    "updatedAt": "...",
+    "x": 0.25,
+    "y": 0.20,
+    "rotation": 0
+  }
+}
+```
+
+---
+
+### `GET /api/malls/{mallId}/cameras/{cameraId}`
+
+Returns details for a single camera, including floor plan coordinates, room name, and health status.
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "data": {
+    "cameraId": "cam_001",
+    "name": "Entrance Camera",
+    "mallId": "mall_XYZ",
+    "floorId": "floor_1",
+    "floorName": "Ground Floor",
+    "roomId": "room_002",
+    "roomName": "Main Entrance Lobby",
+    "streamType": "simulated",
+    "streamUrl": "/videos/cctv_entrance_sample.mp4",
+    "isActive": true,
+    "x": 0.25,
+    "y": 0.20,
+    "rotation": 0,
+    "createdAt": "...",
+    "updatedAt": "...",
+    "health": {
+      "cameraId": "cam_001",
+      "status": "online",
+      "lastSeenAt": "...",
+      "lastFrameAt": "...",
+      "updatedAt": "..."
+    }
   }
 }
 ```

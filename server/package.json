@@ -6,7 +6,13 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "create-superadmin": "tsx scripts/create-superadmin.ts",
+    "create-management-user": "tsx scripts/create-management-user.ts",
+    "test:auth": "tsx scripts/test-m2-auth.ts",
+    "test:admin": "tsx scripts/test-m3-admin.ts",
+    "test:floorplan": "tsx scripts/test-m4-floorplan.ts",
+    "test:camera": "tsx scripts/test-m5-camera.ts"
   },
   "keywords": [
     "evacai",

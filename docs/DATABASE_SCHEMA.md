@@ -309,21 +309,31 @@ Authoritative camera configuration record.
 | Field | Type | Description |
 |-------|------|-------------|
 | `cameraId` | string | Unique identifier (also used as AI service reference). |
-| `streamType` | enum | `simulated` or `esp32cam`. |
-| `streamUrl` | string | Full URL to the camera stream. |
-| `isActive` | boolean | Whether the camera should be monitored by the AI service. |
+| `name` | string | Human-readable camera label (e.g. "North Atrium Cam"). |
+| `mallId` | string | Identifier of the mall this camera belongs to. |
+| `floorId` | string | Associated building floor ID (e.g. `floor_1`). |
+| `roomId` | string\|null | Optional associated room or area on the floor plan. |
+| `streamType` | enum | `simulated` (local MP4/WebM video) or `mjpeg` / `esp32cam` (HTTP stream). |
+| `streamUrl` | string | Reference path (e.g. `/videos/cctv_entrance_sample.mp4`) or HTTP stream URL. |
+| `isActive` | boolean | Whether the camera is active and monitored. |
+| `createdAt` | ISO8601 | Camera creation timestamp. |
+| `updatedAt` | ISO8601 | Last updated timestamp. |
+
+> **Video Asset Storage:** Video files are served as static frontend assets from Vite/public (`client/public/videos/`) and are **never** stored inside the Firebase Realtime Database. Only the relative path or stream URL is stored in RTDB.
 
 ---
 
 ### 3.8 `malls/{mallId}/cameraHealth/{cameraId}`
 
-Live camera status written by the AI service. Separated from configuration for high write frequency.
+Live camera status written by the AI service and health monitoring. Separated from configuration for high write frequency.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | enum | `online`, `offline`, `unknown`. |
-| `lastSeenAt` | ISO8601 | Last time the AI service successfully connected. |
+| `cameraId` | string | Camera identifier. |
+| `status` | enum | `online`, `offline`, `unknown`, `inactive`. |
+| `lastSeenAt` | ISO8601 | Last time the stream was successfully connected/verified. |
 | `lastFrameAt` | ISO8601 | Last time a valid frame was extracted. |
+| `updatedAt` | ISO8601 | Timestamp of status evaluation. |
 
 ---
 

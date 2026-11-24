@@ -9,7 +9,13 @@
     "dev:ai": "cd ai-service && .\\venv\\Scripts\\python.exe -m uvicorn main:app --reload --port 8000",
     "build:client": "npm --prefix client run build",
     "build:server": "npm --prefix server run build",
-    "build": "npm run build:server && npm run build:client"
+    "build": "npm run build:server && npm run build:client",
+    "create-superadmin": "npm --prefix server run create-superadmin",
+    "create-management-user": "npm --prefix server run create-management-user",
+    "test:auth": "npm --prefix server run test:auth",
+    "test:admin": "npm --prefix server run test:admin",
+    "test:floorplan": "npm --prefix server run test:floorplan",
+    "test:camera": "npm --prefix server run test:camera"
   },
   "keywords": [
     "evacai",
