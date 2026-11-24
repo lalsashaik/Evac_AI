@@ -1,0 +1,25 @@
+{
+  "name": "evacai",
+  "version": "1.0.0",
+  "description": "EvacAI — AI-powered Fire & Smoke Detection, CCTV Monitoring & Incident Management Platform",
+  "private": true,
+  "scripts": {
+    "dev:client": "npm --prefix client run dev",
+    "dev:server": "npm --prefix server run dev",
+    "dev:ai": "cd ai-service && .\\venv\\Scripts\\python.exe -m uvicorn main:app --reload --port 8000",
+    "build:client": "npm --prefix client run build",
+    "build:server": "npm --prefix server run build",
+    "build": "npm run build:server && npm run build:client"
+  },
+  "keywords": [
+    "evacai",
+    "fire-detection",
+    "smoke-detection",
+    "cctv",
+    "esp32-cam",
+    "floor-plan",
+    "major-project"
+  ],
+  "author": "EvacAI Team",
+  "license": "ISC"
+}
