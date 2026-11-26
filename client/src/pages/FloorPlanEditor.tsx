@@ -104,7 +104,7 @@ export function FloorPlanEditor({ totalFloors = 1 }: FloorPlanEditorProps) {
       name: camMarker.name || 'Floor Plan Camera',
       floorId: selectedFloorId,
       streamType: 'simulated',
-      streamUrl: '/videos/cctv_entrance_sample.mp4',
+      streamUrl: '',
       isActive: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

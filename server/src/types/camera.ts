@@ -63,3 +63,25 @@ export interface UpdateCameraDto {
   y?: number;
   rotation?: number;
 }
+
+/**
+ * Real-Time Camera Detection State — M8
+ * Tracks current active presence of fire/smoke separate from historical incidents.
+ * Path: malls/{mallId}/cameraDetectionState/{cameraId}
+ */
+export interface CameraDetectionState {
+  cameraId: string;
+  mallId: string;
+  isCurrentlyDetected: boolean;
+  detectionType: 'fire' | 'smoke' | 'fire_and_smoke' | null;
+  activeTypes?: string[];
+  lastDetectedAt: string | null;
+  updatedAt: string;
+  confidence?: number | null;
+  cameraStatus?: string;
+  latestEvidenceFileName?: string | null;
+  latestEvidenceId?: string | null;
+  latestEvidenceRelativePath?: string | null;
+  lastClearAt?: string | null;
+}
+

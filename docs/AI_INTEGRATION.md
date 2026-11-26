@@ -14,9 +14,9 @@ The AI component is a standalone Python service that:
 2. Extracts video frames at a configurable interval.
 3. Runs fire and smoke detection using a YOLO-based model.
 4. Suppresses duplicate detections within a cooldown window.
-5. Captures a snapshot of detected frames.
-6. Uploads snapshots to Firebase Storage.
-7. Reports detection events to the Node.js backend.
+5. Captures an annotated evidence snapshot frame.
+6. Saves snapshots to shared local evidence storage (`EVACAI_EVIDENCE_DIR`).
+7. Reports detection events to the Node.js backend (`POST /api/detection`).
 8. Reports camera health status to the backend.
 
 The AI service operates **independently** of the web dashboard. It is a background service that runs continuously.
@@ -31,7 +31,7 @@ The AI service operates **independently** of the web dashboard. It is a backgrou
 | API framework | FastAPI (for `/health`, `/status`, optional future control endpoints) |
 | Video processing | OpenCV (cv2) |
 | Object detection | Ultralytics YOLOv8 |
-| Firebase Storage upload | `firebase-admin` Python SDK |
+| Local Evidence Storage | Shared filesystem directory (`EVACAI_EVIDENCE_DIR`) |
 | HTTP client | `httpx` (async) or `requests` |
 | Configuration | `pyyaml` |
 | Concurrency | `asyncio` with `concurrent.futures` or `threading` for stream readers |
@@ -72,12 +72,16 @@ The model must detect:
 
 Some models detect both; some detect only one. Configure the detection pipeline to handle both classes and report `detectionType` accordingly.
 
-### 3.5 Chosen Model for MVP
+### 3.5 Chosen Model for MVP (Implemented in Milestone 6)
 
-> **Decision to make before Milestone 4 (AI Implementation):**  
-> Download and evaluate the best available pre-trained fire/smoke YOLOv8 weights from Roboflow Universe. If accuracy is insufficient on test videos, fine-tune using the D-Fire dataset with Ultralytics YOLOv8's training pipeline.
-
-Weights file: `ai-service/models/fire_smoke_yolov8.pt` (not committed to git).
+- **Model Architecture:** Ultralytics YOLOv8n (Nano) fine-tuned for Fire and Smoke detection.
+- **Weights File:** `ai-service/models/fire_smoke_yolov8n.pt` (~6.2 MB).
+- **Model Source / Provenance:** Hosted via Hugging Face (`rabahdev/fire-smoke-yolov8n`), trained on the academic **D-Fire** dataset (Pedro Vinícius A. B. de Venâncio), comprising over 21,000 annotated images of real-world fire and smoke hazards.
+- **Classes Supported:**
+  - `0`: `smoke`
+  - `1`: `fire`
+- **Default Confidence Threshold:** `0.60` (configurable via `CONFIDENCE_THRESHOLD` environment variable).
+- **Execution Target:** CPU by default (with auto-acceleration if NVIDIA CUDA is present). Runs smoothly on standard laptop hardware.
 
 ---
 
@@ -108,7 +112,7 @@ Weights file: `ai-service/models/fire_smoke_yolov8.pt` (not committed to git).
 │                                                   │                  │
 │                              ┌────────────────────┘                  │
 │                              ▼                                       │
-│                     Upload snapshot to Firebase Storage              │
+│                     Save snapshot locally (EVACAI_EVIDENCE_DIR)     │
 │                              │                                       │
 │                              ▼                                       │
 │                     POST /api/detection to backend                   │
@@ -252,27 +256,30 @@ inference:
 
 ---
 
-## 9. Snapshot Capture and Storage
+## 9. Snapshot Capture and Local Evidence Storage
 
 When a detection passes the confidence threshold and cooldown check:
 
 ```python
-def capture_snapshot(frame, mall_id, incident_id):
-    # Encode the frame as JPEG
-    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    image_bytes = buffer.tobytes()
+def save_evidence(self, frame, mall_id, camera_id, event_id, detections):
+    """
+    Annotates the frame with detection bounding boxes and writes
+    the evidence snapshot JPEG image directly to disk.
+    """
+    incidents_dir = os.path.join(settings.evidence_dir, "incidents", mall_id)
+    os.makedirs(incidents_dir, exist_ok=True)
 
-    # Upload to Firebase Storage
-    path = f"incidents/{mall_id}/{incident_id}/snapshot.jpg"
-    bucket = firebase_admin.storage.bucket()
-    blob = bucket.blob(path)
-    blob.upload_from_string(image_bytes, content_type='image/jpeg')
-    blob.make_public()  # Or use signed URLs in production
+    filename = f"{event_id}.jpg"
+    abs_path = os.path.join(incidents_dir, filename)
+    rel_reference = f"incidents/{mall_id}/{filename}"
 
-    return blob.public_url, path
+    annotated = self.annotate_frame(frame, detections, camera_id=camera_id)
+    cv2.imwrite(abs_path, annotated, [cv2.IMWRITE_JPEG_QUALITY, 88])
+
+    return rel_reference, abs_path
 ```
 
-The `incident_id` used here is a pre-generated UUID created by the AI service before calling the backend. The backend uses this same ID when creating the incident record, ensuring the snapshot path matches.
+The AI service writes the annotated frame directly to local disk within `EVACAI_EVIDENCE_DIR` and passes the safe `evidenceId`, `evidenceFileName`, and `evidenceRelativePath` to the Node.js backend via `POST /api/detection`. No binary images or Base64 payloads are sent across HTTP, and no cloud storage SDK is used.
 
 ---
 
@@ -301,14 +308,49 @@ The backend writes this to `/malls/{mallId}/cameraHealth/{cameraId}`.
 
 ## 11. AI Service Internal API (FastAPI)
 
-The AI service exposes internal endpoints for monitoring:
+The AI service exposes endpoints for health monitoring, camera lifecycle control, and recent detection inspection:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Returns service liveness. |
-| `/status` | GET | Returns per-camera inference status and last detection time. |
+| `/health` | GET | Returns service status, model loaded status, class mapping, active cameras, and OpenCV version. |
+| `/cameras/status` | GET | Returns processing status, frames count, and detections count for all configured cameras. |
+| `/cameras/{cameraId}/status` | GET | Returns status for a single camera worker. |
+| `/cameras/{cameraId}/start` | POST | Starts or restarts AI processing loop for the camera. Accepts camera configuration payload. |
+| `/cameras/{cameraId}/stop` | POST | Stops AI processing for the camera and releases video capture resources. |
+| `/cameras/sync` | POST | Requests immediate camera synchronization from Node.js backend (`/api/internal/cameras`). |
+| `/detections/recent` | GET | Returns recent verified fire/smoke detection events with bounding boxes and evidence links. |
+| `/evidence/{mallId}/{cameraId}/{filename}` | GET | Serves local annotated evidence JPEG snapshots with detection bounding boxes. |
 
-These are for operator monitoring only. They are not called by the frontend.
+### 11.1 Detection Event Output Contract (for Milestone 7)
+
+```json
+{
+  "eventId": "evt_1795540026870_a4c9af",
+  "cameraId": "cam_001",
+  "mallId": "mall_XYZ",
+  "detectionType": "fire",
+  "confidence": 0.86,
+  "boundingBoxes": [
+    {
+      "x": 120.5,
+      "y": 80.2,
+      "width": 64.0,
+      "height": 48.0,
+      "class_name": "fire",
+      "confidence": 0.86
+    }
+  ],
+  "timestamp": "2026-11-24T17:07:06.870Z",
+  "evidenceReference": "evidence/mall_XYZ/cam_001/evt_1795540026870_a4c9af.jpg",
+  "evidenceUrl": "/evidence/mall_XYZ/cam_001/evt_1795540026870_a4c9af.jpg",
+  "metadata": {
+    "cameraName": "Entrance Atrium Cam-01",
+    "streamType": "simulated",
+    "framesProcessed": 12,
+    "totalDetectionsInFrame": 1
+  }
+}
+```
 
 ---
 
@@ -330,34 +372,36 @@ For a larger number of cameras (post-MVP), replace threads with `asyncio` with `
 | Stream URL unreachable | Mark camera `offline`. Retry connection with exponential backoff (5s, 10s, 30s, 60s max). |
 | OpenCV frame read fails | Same as above — `cap.read()` returning False. |
 | Simulated video ends | Loop: `cap.set(CAP_PROP_POS_FRAMES, 0)` and continue. |
-| Backend POST fails | Log error. Do not suppress the detection. Retry once after 5 seconds. |
-| Firebase Storage upload fails | Log error. Report detection to backend without `snapshotUrl`. |
+| Backend POST fails | Log error. Do not crash worker loop. Detection is buffered in memory. |
+| Local evidence save fails | Log error. Send detection to backend with evidence available false. |
 | YOLO model load fails | Fatal error. Exit with log. The model file must be present at startup. |
 
 ---
 
 ## 14. Configuration Reference
 
-Full `config.yaml` specification:
+Environment variables and `.env` specification:
 
-```yaml
-# AI Service Configuration
+```bash
+# Service Settings
+PORT=8000
+HOST=0.0.0.0
+ENVIRONMENT=development
 
-cameras: []  # Loaded dynamically from backend at startup; fallback to this list if backend unreachable
+# Backend Integration
+BACKEND_API_URL=http://localhost:4000/api
+AI_SERVICE_KEY=evacai_dev_secret_key_change_in_production
 
-inference:
-  frameIntervalSeconds: 2.0      # Seconds between processed frames per camera
-  confidenceThreshold: 0.60      # Minimum YOLO confidence to register a detection
-  cooldownSeconds: 30            # Seconds before the same camera+type generates a new incident
-  modelPath: "models/fire_smoke_yolov8.pt"
+# Detection & Video Inference
+MODEL_PATH=models/fire_smoke_yolov8n.pt
+CONFIDENCE_THRESHOLD=0.60
+FRAME_INTERVAL_SECONDS=1.0
+COOLDOWN_SECONDS=30
+MAX_RECENT_EVENTS=100
 
-backend:
-  url: "http://localhost:4000"
-  aiServiceSecret: ""            # Loaded from .env
-
-firebase:
-  storageBucket: ""              # e.g., your-project.appspot.com
-  serviceAccountPath: ""         # Path to service account JSON (dev only; use env vars in prod)
+# Local Shared Evidence Storage (M7)
+EVACAI_EVIDENCE_DIR=../evidence
+```
 
 logging:
   level: "INFO"                  # DEBUG | INFO | WARNING | ERROR

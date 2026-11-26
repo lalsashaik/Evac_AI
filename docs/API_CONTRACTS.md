@@ -487,7 +487,8 @@ Returns incidents for the mall, most recent first.
         "confidence": 0.91,
         "detectedAt": "2026-11-24T14:00:00.000Z",
         "status": "DETECTED",
-        "snapshotUrl": "https://firebasestorage.googleapis.com/...",
+        "evidenceAvailable": true,
+        "evidenceEndpoint": "/api/malls/mall_XYZ/incidents/inc_001/evidence",
         "roomName": "Food Court"
       }
     ]
@@ -517,8 +518,12 @@ Returns the full detail of a single incident.
     "confidence": 0.91,
     "detectedAt": "2026-11-24T14:00:00.000Z",
     "createdAt": "2026-11-24T14:00:01.000Z",
-    "snapshotUrl": "https://...",
-    "boundingBoxes": [ { "x": 120, "y": 80, "width": 60, "height": 45, "class": "fire", "confidence": 0.91 } ],
+    "evidenceId": "evt_1795542157045_06fa3d",
+    "evidenceFileName": "evt_1795542157045_06fa3d.jpg",
+    "evidenceRelativePath": "incidents/mall_XYZ/evt_1795542157045_06fa3d.jpg",
+    "evidenceAvailable": true,
+    "evidenceEndpoint": "/api/malls/mall_XYZ/incidents/inc_001/evidence",
+    "boundingBoxes": [ { "x": 120, "y": 80, "width": 60, "height": 45, "class_name": "fire", "confidence": 0.91 } ],
     "status": "ACKNOWLEDGED",
     "acknowledgedBy": "uid_abc",
     "acknowledgedAt": "2026-11-24T14:05:00.000Z",
@@ -565,6 +570,77 @@ INVESTIGATING → FALSE_ALARM
 
 ---
 
+### `GET /api/malls/{mallId}/incidents/{incidentId}/evidence`
+
+Streams the authenticated JPEG evidence snapshot from local storage (`EVACAI_EVIDENCE_DIR`).
+
+**Auth:** Bearer token (Requires `role: mall_management` or `superadmin`, scoped to `:mallId`)
+
+**Response 200:**
+- Headers: `Content-Type: image/jpeg`
+- Body: Binary JPEG image data
+
+**Response 404:**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "EVIDENCE_NOT_FOUND",
+    "message": "Evidence snapshot file is not found on disk."
+  }
+}
+```
+
+---
+
+### `GET /api/malls/{mallId}/notifications`
+
+Returns in-app notifications for the mall, most recent first.
+
+**Auth:** Bearer token (Requires `role: mall_management` or `superadmin`, scoped to `:mallId`)
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "data": {
+    "notifications": [
+      {
+        "notificationId": "notif_001",
+        "type": "incident_detected",
+        "incidentId": "inc_001",
+        "mallId": "mall_XYZ",
+        "message": "FIRE detected in Food Court by Entrance Camera.",
+        "createdAt": "2026-11-24T14:00:01.000Z",
+        "isRead": false
+      }
+    ],
+    "unreadCount": 1
+  }
+}
+```
+
+---
+
+### `PATCH /api/malls/{mallId}/notifications/{notificationId}/read`
+
+Marks an in-app notification as read.
+
+**Auth:** Bearer token (Requires `role: mall_management` or `superadmin`, scoped to `:mallId`)
+
+**Response 200:**
+```json
+{
+  "success": true,
+  "data": {
+    "notificationId": "notif_001",
+    "isRead": true
+  }
+}
+```
+
+---
+
 ## 7. AI Service — Detection Endpoint
 
 > This endpoint is called by the Python AI service, not by the frontend or mall management.
@@ -583,15 +659,16 @@ Submits a fire/smoke detection event.
   "detectionType": "fire",
   "confidence": 0.91,
   "timestamp": "2026-11-24T14:00:00.000Z",
-  "snapshotUrl": "https://firebasestorage.googleapis.com/...",
-  "snapshotPath": "incidents/mall_XYZ/inc_001/snapshot.jpg",
+  "evidenceId": "evt_1795542157045_06fa3d",
+  "evidenceFileName": "evt_1795542157045_06fa3d.jpg",
+  "evidenceRelativePath": "incidents/mall_XYZ/evt_1795542157045_06fa3d.jpg",
   "boundingBoxes": [
     {
       "x": 120,
       "y": 80,
       "width": 60,
       "height": 45,
-      "class": "fire",
+      "class_name": "fire",
       "confidence": 0.91
     }
   ]

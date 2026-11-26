@@ -12,7 +12,11 @@
     "test:auth": "tsx scripts/test-m2-auth.ts",
     "test:admin": "tsx scripts/test-m3-admin.ts",
     "test:floorplan": "tsx scripts/test-m4-floorplan.ts",
-    "test:camera": "tsx scripts/test-m5-camera.ts"
+    "test:camera": "tsx scripts/test-m5-camera.ts",
+    "test:incident": "tsx scripts/test-m7-incident.ts",
+    "test:situation": "tsx scripts/test-m8-situation.ts",
+    "test:mail": "tsx scripts/test-mail-auto-trigger.ts",
+    "test:e2e": "tsx scripts/test-m7-e2e.ts"
   },
   "keywords": [
     "evacai",
@@ -25,10 +29,12 @@
   "author": "EvacAI Team",
   "license": "ISC",
   "dependencies": {
+    "@types/nodemailer": "^8.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "firebase-admin": "^13.0.1"
+    "firebase-admin": "^13.0.1",
+    "nodemailer": "^10.6.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

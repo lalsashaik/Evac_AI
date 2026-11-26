@@ -375,19 +375,19 @@ export const SuperadminDashboard: React.FC = () => {
   const filteredMalls = malls.filter((m) => {
     const q = searchQuery.toLowerCase();
     return (
-      m.name.toLowerCase().includes(q) ||
-      m.mallId.toLowerCase().includes(q) ||
-      (m.address && m.address.toLowerCase().includes(q))
+      (m.name || '').toLowerCase().includes(q) ||
+      (m.mallId || '').toLowerCase().includes(q) ||
+      (m.address ? m.address.toLowerCase().includes(q) : false)
     );
   });
 
   const filteredAccounts = accounts.filter((a) => {
     const q = searchQuery.toLowerCase();
     return (
-      a.displayName.toLowerCase().includes(q) ||
-      a.email.toLowerCase().includes(q) ||
-      a.mallName.toLowerCase().includes(q) ||
-      (a.mallId && a.mallId.toLowerCase().includes(q))
+      (a.displayName || '').toLowerCase().includes(q) ||
+      (a.email || '').toLowerCase().includes(q) ||
+      (a.mallName || '').toLowerCase().includes(q) ||
+      (a.mallId ? a.mallId.toLowerCase().includes(q) : false)
     );
   });
 
@@ -906,7 +906,7 @@ export const SuperadminDashboard: React.FC = () => {
                           <tr key={acc.uid} className="hover:bg-slate-50 transition">
                             <td className="px-5 py-4 font-semibold text-slate-900 flex items-center gap-2.5">
                               <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-700 font-bold text-xs shrink-0">
-                                {acc.displayName.charAt(0).toUpperCase()}
+                                {(acc.displayName || 'U').charAt(0).toUpperCase()}
                               </div>
                               {acc.displayName}
                             </td>

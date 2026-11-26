@@ -6,9 +6,11 @@ This directory holds local static video assets for simulated CCTV camera feeds i
 
 The following sample videos are bundled with the repository for development, college project demos, and evaluation without physical camera hardware:
 
-1. `cctv_entrance_sample.mp4` — Bundled sample video for Main Entrance / Lobby CCTV feeds.
-2. `cctv_corridor_sample.mp4` — Bundled sample video for Corridor / Hallway CCTV feeds.
-3. `cctv_foodcourt_sample.mp4` — Bundled sample video for Food Court / Retail Area CCTV feeds.
+1. `cctv_entrance_sample.mp4` — Bundled sample video for Main Entrance / Lobby CCTV feeds (normal surveillance).
+2. `cctv_corridor_sample.mp4` — Bundled sample video for Corridor / Hallway CCTV feeds (normal surveillance).
+3. `cctv_foodcourt_sample.mp4` — Bundled sample video for Food Court / Retail Area CCTV feeds (normal surveillance).
+4. `cctv_fire_sample.mp4` — Bundled fire hazard sample video for AI fire detection testing (M6).
+5. `cctv_smoke_sample.mp4` — Bundled smoke hazard sample video for AI smoke detection testing (M6).
 
 ## How to Add Your Own Sample Videos
 

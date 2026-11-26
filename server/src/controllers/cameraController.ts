@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { getFirebaseDatabase } from '../config/firebase';
+import { env } from '../config/environment';
 import {
   CameraRecord,
   CameraHealthRecord,
@@ -7,6 +8,25 @@ import {
   CreateCameraDto,
   UpdateCameraDto,
 } from '../types/camera';
+
+function notifyAiServiceCameraChange(action: 'start' | 'stop', payload: any): void {
+  const url = action === 'start'
+    ? `${env.aiServiceUrl}/cameras/${payload.cameraId}/start`
+    : `${env.aiServiceUrl}/cameras/${payload.cameraId}/stop`;
+
+  try {
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-AI-Service-Key': env.aiServiceKey,
+      },
+      body: action === 'start' ? JSON.stringify(payload) : undefined,
+    }).catch((err) => {
+      console.debug(`[CameraController] AI service camera notification (${action}) non-blocking notice:`, err.message);
+    });
+  } catch (_) {}
+}
 
 function getParam(param: string | string[] | undefined, defaultVal = ''): string {
   if (Array.isArray(param)) return param[0] || defaultVal;
@@ -283,6 +303,30 @@ export async function createCamera(req: Request, res: Response): Promise<void> {
       });
     }
 
+    // Initialize clean cameraDetectionState in RTDB
+    await db.ref(`malls/${mallId}/cameraDetectionState/${cameraId}`).set({
+      cameraId,
+      mallId,
+      isCurrentlyDetected: false,
+      detectionType: null,
+      activeTypes: [],
+      lastDetectedAt: null,
+      updatedAt: now,
+      confidence: 0,
+      cameraStatus: isActive ? 'online' : 'inactive',
+    });
+
+    // Notify AI service to monitor new camera immediately if active
+    if (isActive) {
+      notifyAiServiceCameraChange('start', {
+        cameraId,
+        mallId,
+        name: cameraRecord.name,
+        streamType: cameraRecord.streamType,
+        streamUrl: cameraRecord.streamUrl,
+      });
+    }
+
     console.log(`[CameraController] Created camera '${cameraId}' for mall '${mallId}' (floor: ${floorId})`);
 
     res.status(201).json({
@@ -382,6 +426,49 @@ export async function updateCamera(req: Request, res: Response): Promise<void> {
       });
     }
 
+    // Immediately reset real-time detection presence in RTDB when camera config / stream changes
+    await db.ref(`malls/${mallId}/cameraDetectionState/${cameraId}`).set({
+      cameraId,
+      mallId,
+      isCurrentlyDetected: false,
+      detectionType: null,
+      activeTypes: [],
+      lastDetectedAt: null,
+      updatedAt: now,
+      confidence: 0,
+      cameraStatus: updatedCamera.isActive ? 'online' : 'inactive',
+    });
+
+    // Reset deduplication incident groups for this camera so past cooldowns do not lock out the new video feed
+    await Promise.all([
+      db.ref(`malls/${mallId}/incidentGroups/${cameraId}_fire`).remove().catch(() => {}),
+      db.ref(`malls/${mallId}/incidentGroups/${cameraId}_smoke`).remove().catch(() => {}),
+      db.ref(`malls/${mallId}/incidentGroups/${cameraId}_fire_and_smoke`).remove().catch(() => {}),
+      db.ref(`malls/${mallId}/cameraDetectionState/${cameraId}`).set({
+        cameraId,
+        mallId,
+        isCurrentlyDetected: false,
+        detectionType: null,
+        activeTypes: [],
+        updatedAt: now,
+        cameraStatus: updatedCamera.isActive ? 'running' : 'stopped',
+        confidence: null,
+      }).catch(() => {}),
+    ]);
+
+    // Notify AI service of camera update so worker restarts with the new streamUrl / active state
+    if (updatedCamera.isActive) {
+      notifyAiServiceCameraChange('start', {
+        cameraId,
+        mallId,
+        name: updatedCamera.name,
+        streamType: updatedCamera.streamType,
+        streamUrl: updatedCamera.streamUrl,
+      });
+    } else {
+      notifyAiServiceCameraChange('stop', { cameraId });
+    }
+
     console.log(`[CameraController] Updated camera '${cameraId}' for mall '${mallId}'`);
 
     res.status(200).json({
@@ -439,6 +526,16 @@ export async function deleteCamera(req: Request, res: Response): Promise<void> {
 
     // 3. Remove marker from floor plan (check all floors or camera's floorId)
     await db.ref(`malls/${mallId}/floorplans/${floorId}/cameras/${cameraId}`).remove();
+
+    // 4. Remove cameraDetectionState and incident groups
+    await Promise.all([
+      db.ref(`malls/${mallId}/cameraDetectionState/${cameraId}`).remove().catch(() => {}),
+      db.ref(`malls/${mallId}/incidentGroups/${cameraId}_fire`).remove().catch(() => {}),
+      db.ref(`malls/${mallId}/incidentGroups/${cameraId}_smoke`).remove().catch(() => {}),
+    ]);
+
+    // 5. Notify AI service to stop worker for deleted camera
+    notifyAiServiceCameraChange('stop', { cameraId });
 
     console.log(`[CameraController] Deleted camera '${cameraId}' from mall '${mallId}'`);
 

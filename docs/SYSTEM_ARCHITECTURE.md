@@ -15,7 +15,7 @@ EvacAI is a multi-component distributed system. The major components are:
 3. **Python AI Service** — Independent video processing and fire/smoke detection service.
 4. **Firebase Authentication** — Identity and token management.
 5. **Firebase Realtime Database** — Primary application database.
-6. **Firebase Storage** — Incident snapshot storage.
+6. **Local Evidence Storage (`EVACAI_EVIDENCE_DIR`)** — Shared on-disk incident snapshot JPEG storage (no Firebase Storage).
 7. **ESP32-CAM Devices** — Physical camera hardware (future/hardware-integration phase).
 8. **Simulated Camera Sources** — Pre-recorded video files for development and testing.
 
@@ -60,7 +60,7 @@ EvacAI is a multi-component distributed system. The major components are:
 │  - Frame extractor                                                   │
 │  - YOLO inference engine                                             │
 │  - Duplicate-event suppressor                                        │
-│  - Snapshot capturer → Firebase Storage                              │
+│  - Snapshot capturer → Local Evidence Directory (`EVACAI_EVIDENCE_DIR`)│
 │  - Detection event sender                                            │
 └──────────────────────────┬───────────────────────────────────────────┘
                            │ Reads MJPEG stream
@@ -170,15 +170,18 @@ EvacAI is a multi-component distributed system. The major components are:
 
 **NOT used for:**
 - Video stream data.
-- Binary files (snapshots go to Firebase Storage).
+- Binary files (snapshots are stored on local filesystem in `EVACAI_EVIDENCE_DIR`).
+- Base64 image strings.
 
 ---
 
-### 2.6 Firebase Storage
+### 2.6 Local Evidence Storage (`EVACAI_EVIDENCE_DIR`)
 
 **Responsibilities:**
-- Store incident snapshot images (JPEG/PNG frames captured at detection time).
-- Provide secure download URLs for snapshot retrieval.
+- Store annotated incident snapshot JPEG files captured by the Python AI service upon fire/smoke detection.
+- Provide directory isolation by mall: `EVACAI_EVIDENCE_DIR/incidents/{mallId}/{evidenceId}.jpg`.
+- Secured through authenticated Node.js backend endpoint `GET /api/malls/{mallId}/incidents/{incidentId}/evidence` (no public static hosting, strict path traversal defense).
+- EvacAI avoids Firebase Storage to prevent billing dependencies (Blaze plan) in major project prototype.
 
 ---
 

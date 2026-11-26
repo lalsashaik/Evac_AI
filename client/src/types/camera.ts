@@ -37,23 +37,25 @@ export interface SampleVideoOption {
   url: string;
 }
 
-export const BUNDLED_SAMPLE_VIDEOS: SampleVideoOption[] = [
-  {
-    id: 'entrance',
-    label: 'Main Entrance Feed (Bundled Demo)',
-    description: 'Lobby & main entrance surveillance footage',
-    url: '/videos/cctv_entrance_sample.mp4',
-  },
-  {
-    id: 'corridor',
-    label: 'Corridor Walkway Feed (Bundled Demo)',
-    description: 'Pedestrian corridor & emergency egress pathway',
-    url: '/videos/cctv_corridor_sample.mp4',
-  },
-  {
-    id: 'foodcourt',
-    label: 'Food Court & Atrium Feed (Bundled Demo)',
-    description: 'High-density commercial retail area',
-    url: '/videos/cctv_foodcourt_sample.mp4',
-  },
-];
+export const BUNDLED_SAMPLE_VIDEOS: SampleVideoOption[] = [];
+
+/**
+ * Real-Time Camera Detection State — M8 (Frontend)
+ * Stored at: malls/{mallId}/cameraDetectionState/{cameraId}
+ */
+export interface CameraDetectionState {
+  cameraId: string;
+  mallId: string;
+  isCurrentlyDetected: boolean;
+  detectionType: 'fire' | 'smoke' | 'fire_and_smoke' | null;
+  activeTypes?: string[];
+  lastDetectedAt: string | null;
+  updatedAt: string;
+  confidence?: number | null;
+  cameraStatus?: string;
+  latestEvidenceFileName?: string | null;
+  latestEvidenceId?: string | null;
+  latestEvidenceRelativePath?: string | null;
+  lastClearAt?: string | null;
+}
+

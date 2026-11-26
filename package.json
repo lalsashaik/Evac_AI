@@ -15,7 +15,12 @@
     "test:auth": "npm --prefix server run test:auth",
     "test:admin": "npm --prefix server run test:admin",
     "test:floorplan": "npm --prefix server run test:floorplan",
-    "test:camera": "npm --prefix server run test:camera"
+    "test:camera": "npm --prefix server run test:camera",
+    "test:incident": "npm --prefix server run test:incident",
+    "test:situation": "npm --prefix server run test:situation",
+    "test:e2e": "npm --prefix server run test:e2e",
+    "test:ai": "ai-service\\venv\\Scripts\\python.exe ai-service\\test_ai_service.py",
+    "test:manual": "ai-service\\venv\\Scripts\\python.exe ai-service\\manual_detection_test.py"
   },
   "keywords": [
     "evacai",

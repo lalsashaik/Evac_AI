@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CameraRecord, CameraStreamType, BUNDLED_SAMPLE_VIDEOS } from '@/types/camera';
+import { CameraRecord, CameraStreamType } from '@/types/camera';
 import { FloorRoom } from '@/types/floorplan';
 import {
   X,
@@ -39,8 +39,7 @@ export const CameraFormModal: React.FC<CameraFormModalProps> = ({
   const [floorId, setFloorId] = useState('floor_1');
   const [roomId, setRoomId] = useState<string>('');
   const [streamType, setStreamType] = useState<CameraStreamType>('simulated');
-  const [selectedVideoPreset, setSelectedVideoPreset] = useState<string>('entrance');
-  const [customStreamUrl, setCustomStreamUrl] = useState('');
+  const [streamUrl, setStreamUrl] = useState('');
   const [isActive, setIsActive] = useState<boolean>(true);
   const [xCoord, setXCoord] = useState<number>(0.5);
   const [yCoord, setYCoord] = useState<number>(0.5);
@@ -55,26 +54,17 @@ export const CameraFormModal: React.FC<CameraFormModalProps> = ({
       setFloorId(initialData.floorId || 'floor_1');
       setRoomId(initialData.roomId || '');
       setStreamType(initialData.streamType || 'simulated');
+      setStreamUrl(initialData.streamUrl || '');
       setIsActive(initialData.isActive !== undefined ? initialData.isActive : true);
       setXCoord(initialData.x !== undefined && initialData.x !== null ? initialData.x : 0.5);
       setYCoord(initialData.y !== undefined && initialData.y !== null ? initialData.y : 0.5);
-
-      const matchedPreset = BUNDLED_SAMPLE_VIDEOS.find((v) => v.url === initialData.streamUrl);
-      if (matchedPreset) {
-        setSelectedVideoPreset(matchedPreset.id);
-        setCustomStreamUrl('');
-      } else {
-        setSelectedVideoPreset('custom');
-        setCustomStreamUrl(initialData.streamUrl || '');
-      }
     } else {
       // Default for new camera
       setName('');
       setFloorId(availableFloors[0]?.id || 'floor_1');
       setRoomId('');
       setStreamType('simulated');
-      setSelectedVideoPreset('entrance');
-      setCustomStreamUrl('');
+      setStreamUrl('');
       setIsActive(true);
       setXCoord(0.5);
       setYCoord(0.5);
@@ -98,17 +88,6 @@ export const CameraFormModal: React.FC<CameraFormModalProps> = ({
     }
   };
 
-  const getEffectiveStreamUrl = (): string => {
-    if (streamType === 'mjpeg' || streamType === 'esp32cam') {
-      return customStreamUrl.trim();
-    }
-    if (selectedVideoPreset === 'custom') {
-      return customStreamUrl.trim();
-    }
-    const preset = BUNDLED_SAMPLE_VIDEOS.find((p) => p.id === selectedVideoPreset);
-    return preset ? preset.url : '/videos/cctv_entrance_sample.mp4';
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -118,7 +97,7 @@ export const CameraFormModal: React.FC<CameraFormModalProps> = ({
       return;
     }
 
-    const effectiveUrl = getEffectiveStreamUrl();
+    const effectiveUrl = streamUrl.trim();
     if (!effectiveUrl) {
       setErrorMessage('Please provide a valid stream URL or video source.');
       return;
@@ -237,6 +216,7 @@ export const CameraFormModal: React.FC<CameraFormModalProps> = ({
           </div>
 
           {/* Camera Source Type Selection */}
+          {/* Camera Source Type Selection */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               Video Source Type <span className="text-red-500">*</span>
@@ -254,18 +234,18 @@ export const CameraFormModal: React.FC<CameraFormModalProps> = ({
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-xs flex items-center gap-1.5">
                     <Video className="w-3.5 h-3.5 text-blue-600" />
-                    Simulated CCTV
+                    Pre-recorded Video
                   </span>
                   {streamType === 'simulated' && <Check className="w-3.5 h-3.5 text-blue-600" />}
                 </div>
                 <p className="text-[10px] text-slate-500 leading-tight">
-                  Pre-recorded MP4/WebM video stream for college prototype.
+                  Direct URL or local video file path (MP4/WebM) to simulate CCTV feed.
                 </p>
               </button>
 
               <button
                 type="button"
-                onClick={() => setStreamType('mjpeg')}
+                onClick={() => setStreamType('esp32cam')}
                 className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
                   streamType === 'mjpeg' || streamType === 'esp32cam'
                     ? 'border-purple-500 bg-purple-50/70 text-purple-900 ring-1 ring-purple-500 shadow-xs'
@@ -275,105 +255,42 @@ export const CameraFormModal: React.FC<CameraFormModalProps> = ({
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-xs flex items-center gap-1.5">
                     <Radio className="w-3.5 h-3.5 text-purple-600" />
-                    MJPEG Stream
+                    ESP32-CAM Stream
                   </span>
                   {(streamType === 'mjpeg' || streamType === 'esp32cam') && (
                     <Check className="w-3.5 h-3.5 text-purple-600" />
                   )}
                 </div>
                 <p className="text-[10px] text-slate-500 leading-tight">
-                  HTTP MJPEG feed for future ESP32-CAM Wi-Fi hardware.
+                  Live HTTP MJPEG stream endpoint from ESP32-CAM Wi-Fi hardware.
                 </p>
               </button>
             </div>
           </div>
 
-          {/* Source Configuration based on selected type */}
-          {streamType === 'simulated' ? (
-            <div className="space-y-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
-              <label className="block text-xs font-semibold text-slate-700">
-                Pre-recorded Simulation Video
-              </label>
-              <div className="space-y-2">
-                {BUNDLED_SAMPLE_VIDEOS.map((preset) => (
-                  <label
-                    key={preset.id}
-                    className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition ${
-                      selectedVideoPreset === preset.id
-                        ? 'bg-blue-50/80 border-blue-400 text-blue-900'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="sampleVideo"
-                      checked={selectedVideoPreset === preset.id}
-                      onChange={() => setSelectedVideoPreset(preset.id)}
-                      className="mt-0.5 text-blue-600 focus:ring-blue-500"
-                    />
-                    <div className="min-w-0">
-                      <div className="font-semibold text-xs text-slate-900">{preset.label}</div>
-                      <div className="text-[10px] text-slate-500">{preset.description}</div>
-                      <div className="text-[9px] font-mono text-slate-400 mt-0.5">{preset.url}</div>
-                    </div>
-                  </label>
-                ))}
-
-                <label
-                  className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition ${
-                    selectedVideoPreset === 'custom'
-                      ? 'bg-blue-50/80 border-blue-400 text-blue-900'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="sampleVideo"
-                    checked={selectedVideoPreset === 'custom'}
-                    onChange={() => setSelectedVideoPreset('custom')}
-                    className="mt-0.5 text-blue-600 focus:ring-blue-500"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="font-semibold text-xs text-slate-900">Custom Video File / URL</div>
-                    <div className="text-[10px] text-slate-500">
-                      Local file in client/public/videos/ or external HTTPS MP4
-                    </div>
-                  </div>
-                </label>
-              </div>
-
-              {selectedVideoPreset === 'custom' && (
-                <div className="pt-2 animate-in fade-in duration-150">
-                  <Input
-                    type="text"
-                    value={customStreamUrl}
-                    onChange={(e) => setCustomStreamUrl(e.target.value)}
-                    placeholder="e.g. /videos/my_cctv.mp4 or https://.../video.mp4"
-                    className="text-xs h-9 bg-white"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Tip: Store custom video files under <code className="font-mono text-slate-600">client/public/videos/</code>.
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2 bg-purple-50/50 p-3.5 rounded-xl border border-purple-200/80">
-              <label className="block text-xs font-semibold text-purple-900">
-                ESP32-CAM MJPEG Stream Endpoint
-              </label>
-              <Input
-                type="text"
-                value={customStreamUrl}
-                onChange={(e) => setCustomStreamUrl(e.target.value)}
-                placeholder="http://192.168.1.50/stream"
-                className="text-xs h-9 bg-white font-mono"
-              />
-              <p className="text-[10px] text-slate-500">
-                Specify the HTTP MJPEG streaming URL exposed by the ESP32-CAM device on your local Wi-Fi.
-              </p>
-            </div>
-          )}
+          {/* Source URL Input */}
+          <div className="space-y-2 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+            <label className="block text-xs font-semibold text-slate-700">
+              {streamType === 'simulated' ? 'Pre-recorded Video URL / Local Path' : 'ESP32-CAM Stream Link'} <span className="text-red-500">*</span>
+            </label>
+            <Input
+              type="text"
+              value={streamUrl}
+              onChange={(e) => setStreamUrl(e.target.value)}
+              placeholder={
+                streamType === 'simulated'
+                  ? 'e.g. https://domain.com/video.mp4 or D:/videos/fire.mp4'
+                  : 'http://192.168.1.50:81/stream'
+              }
+              className="text-xs h-9 bg-white font-mono"
+              required
+            />
+            <p className="text-[10px] text-slate-500">
+              {streamType === 'simulated'
+                ? 'Provide a valid video URL (HTTP/HTTPS) or an accessible local file path.'
+                : 'Provide the live HTTP stream link exposed by the ESP32-CAM module.'}
+            </p>
+          </div>
 
           {/* Floor Plan Coordinates */}
           <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2">

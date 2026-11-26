@@ -1,8 +1,21 @@
 import React from 'react';
-import { ShieldAlert, Flame } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
 import { UserDropdown } from './UserDropdown';
+import { NotificationBell } from '../notifications/NotificationBell';
+import { useAuth } from '@/context/AuthContext';
+import { NotificationRecord } from '@/types/incident';
 
-export const AppHeader: React.FC = () => {
+interface AppHeaderProps {
+  onSelectIncident?: (incidentId: string) => void;
+  onNewNotificationAlert?: (notification: NotificationRecord) => void;
+}
+
+export const AppHeader: React.FC<AppHeaderProps> = ({
+  onSelectIncident,
+  onNewNotificationAlert,
+}) => {
+  const { mallId, getToken } = useAuth();
+
   return (
     <header className="h-16 bg-white border-b border-slate-200/90 sticky top-0 z-30 px-4 sm:px-6 flex items-center justify-between shadow-xs">
       {/* Left side: Logo & Title ONLY */}
@@ -17,10 +30,19 @@ export const AppHeader: React.FC = () => {
         </div>
       </div>
 
-      {/* Right side: Avatar with initials, Display Name, and Dropdown */}
-      <div className="flex items-center">
+      {/* Right side: Notification Bell & User Dropdown */}
+      <div className="flex items-center gap-3">
+        {mallId && (
+          <NotificationBell
+            mallId={mallId}
+            getToken={getToken}
+            onSelectIncident={onSelectIncident}
+            onNewNotificationAlert={onNewNotificationAlert}
+          />
+        )}
         <UserDropdown />
       </div>
     </header>
   );
 };
+

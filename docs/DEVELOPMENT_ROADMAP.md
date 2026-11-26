@@ -216,47 +216,56 @@
 **Dependencies:** Milestone 5 (camera CRUD and `/api/internal/cameras` endpoint)
 
 **Acceptance Criteria:**
-- [ ] AI service starts and loads camera list from the backend.
-- [ ] AI service opens the simulated camera video file and loops it.
-- [ ] YOLO inference runs on sampled frames without errors.
-- [ ] A detection on the test video triggers a `POST /api/detection` call to the backend.
-- [ ] Camera health updates appear in `/malls/{mallId}/cameraHealth/` after the service starts.
-- [ ] After the cooldown window, a second detection event is sent for the same camera.
-- [ ] AI service logs clearly show: frame sampled, inference result, detection sent, detection deduplicated.
+- [x] AI service starts and loads camera list from the backend.
+- [x] AI service opens the simulated camera video file and loops it.
+- [x] YOLO inference runs on sampled frames without errors.
+- [x] A detection on the test video triggers a `POST /api/detection` call to the backend.
+- [x] Camera health updates appear in `/malls/{mallId}/cameraHealth/` after the service starts.
+- [x] After the cooldown window, a second detection event is sent for the same camera.
+- [x] AI service logs clearly show: frame sampled, inference result, detection sent, detection deduplicated.
 
 ---
 
-### Milestone 7 — Incident Pipeline
+### Milestone 7 — Incident Pipeline, Local Evidence Storage & Notifications
 
 **Scope:**
-- Implement `POST /api/detection` backend endpoint (full logic):
-  - AI service key verification.
-  - Camera validation.
-  - incidentGroup cooldown check.
-  - Incident record creation in Firebase.
-  - incidentGroup creation/update.
-  - Email notification trigger (Nodemailer).
-- Implement incident CRUD backend endpoints:
-  - `GET /api/malls/{mallId}/incidents`
-  - `GET /api/malls/{mallId}/incidents/{incidentId}`
-  - `PATCH /api/malls/{mallId}/incidents/{incidentId}/status`
-- Configure Nodemailer (or equivalent) for email dispatch.
-- Implement real-time incident listener on the frontend (Firebase onValue).
-- Display a notification badge or toast on the management dashboard when a new incident arrives.
-- Write to `/malls/{mallId}/notifications/` for in-app notification records.
+- Implement `POST /api/detection` backend endpoint:
+  - `X-AI-Service-Key` verification.
+  - Authoritative mall and camera validation from Realtime Database.
+  - Incident group cooldown check and atomic transaction on `/malls/{mallId}/incidentGroups/{groupKey}`.
+  - Deduplication handling: Case A (create incident + group), Case B (update group, frameCount++), Case C (cooldown expired, new incident).
+  - Incident record creation in Firebase RTDB (metadata only; zero Base64 and zero binary image bytes).
+  - Email notification trigger via Nodemailer (non-blocking).
+  - In-app notification creation under `/malls/{mallId}/notifications/`.
+- Implement Local Evidence Storage architecture:
+  - Shared filesystem directory configured via `EVACAI_EVIDENCE_DIR` (zero Firebase Storage dependency).
+  - AI service local evidence snapshot saving (`evidence/incidents/{mallId}/{evidenceId}.jpg`).
+  - Protected evidence streaming endpoint `GET /api/malls/{mallId}/incidents/{incidentId}/evidence` enforcing JWT auth, mall ownership, and path traversal boundary checks.
+- Implement incident management backend endpoints:
+  - `GET /api/malls/{mallId}/incidents` (filtering by status, camera, limit)
+  - `GET /api/malls/{mallId}/incidents/{incidentId}` (full detail with evidence endpoint)
+  - `PATCH /api/malls/{mallId}/incidents/{incidentId}/status` (lifecycle: DETECTED → ACKNOWLEDGED → INVESTIGATING → RESOLVED / FALSE_ALARM)
+  - `GET /api/malls/{mallId}/notifications`
+  - `PATCH /api/malls/{mallId}/notifications/{notificationId}/read`
+- Implement frontend real-time integration:
+  - Firebase `onValue` real-time notification listener with seed tracking (no toast storm on initial load).
+  - Toast banner alert and audio-ready alert notification for mall managers.
+  - Unread count badge in header (`NotificationBell`).
+  - Incident list table with status filtering tabs and evidence preview badges.
+  - Incident detail modal with authenticated evidence image loading (`Authorization: Bearer <token>`) and status lifecycle buttons.
 
 **Dependencies:** Milestone 6
 
 **Acceptance Criteria:**
-- [ ] AI service sends a detection → Backend creates an incident in Firebase Realtime Database.
-- [ ] A second detection within the cooldown window does NOT create a new incident.
-- [ ] A detection after the cooldown window DOES create a new incident.
-- [ ] The snapshot URL in the incident record points to a valid image in Firebase Storage.
-- [ ] An email is sent to the mall contact email when a new incident is created.
-- [ ] The management dashboard shows a real-time notification within 2 seconds of incident creation (without page refresh).
-- [ ] Management can view the list of incidents.
-- [ ] Management can view the full detail of an incident including snapshot.
-- [ ] Management can change incident status (DETECTED → ACKNOWLEDGED, etc.).
+- [x] AI service sends a detection → Backend creates an incident in Firebase Realtime Database.
+- [x] A second detection within the cooldown window does NOT create a new incident (deduplicated).
+- [x] A detection after the cooldown window DOES create a new incident.
+- [x] Snapshots stored locally in `EVACAI_EVIDENCE_DIR` and served via authenticated `GET .../evidence` endpoint (zero Firebase Storage, zero Base64).
+- [x] An email alert is triggered to the mall contact email on new incident creation.
+- [x] The management dashboard shows a real-time notification without page refresh.
+- [x] Management can view the list of incidents with status filtering.
+- [x] Management can view the full detail of an incident including authenticated evidence snapshot.
+- [x] Management can change incident status through the full lifecycle (DETECTED → ACKNOWLEDGED → INVESTIGATING → RESOLVED / FALSE_ALARM).
 
 ---
 

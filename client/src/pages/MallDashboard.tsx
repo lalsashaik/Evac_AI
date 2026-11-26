@@ -18,10 +18,18 @@ import {
   Layers,
   Bell,
   AlertTriangle,
-  Compass
+  Flame,
+  Compass,
+  Clock,
 } from 'lucide-react';
 import { FloorPlanEditor } from '@/pages/FloorPlanEditor';
 import { CameraManagement } from '@/components/camera/CameraManagement';
+import { MallSituation } from '@/pages/MallSituation';
+import { IncidentManagement } from '@/components/incident/IncidentManagement';
+import { NotificationRecord, IncidentRecord } from '@/types/incident';
+import { formatDateTime } from '@/lib/utils';
+import { database } from '@/lib/firebase';
+import { ref, onValue, off } from 'firebase/database';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 
@@ -42,8 +50,10 @@ function formatFloorCountLabel(totalFloors?: number): string {
 
 export const MallDashboard: React.FC = () => {
   const { user, profile, mallId, mallName: authMallName, mallInfo: authMallInfo, getToken } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'floorplan' | 'cameras'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'situation' | 'floorplan' | 'cameras' | 'incidents'>('overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [incomingToast, setIncomingToast] = useState<NotificationRecord | null>(null);
   const [mallInfo, setMallInfo] = useState<any>(authMallInfo || null);
   const [floorPlanSummary, setFloorPlanSummary] = useState<{
     shopCount: number;
@@ -60,12 +70,40 @@ export const MallDashboard: React.FC = () => {
     floorName: 'Ground Floor',
     hasPlan: false,
   });
+  const [activeIncidents, setActiveIncidents] = useState<IncidentRecord[]>([]);
+  const [recentAlerts, setRecentAlerts] = useState<IncidentRecord[]>([]);
+  const [globalEmergencyStatus, setGlobalEmergencyStatus] = useState<'active' | 'normal'>('normal');
+
+  // Real-time listener for global emergency status head: /emergency/status
+  useEffect(() => {
+    if (!database) return;
+    const emergencyRef = ref(database, 'emergency/status');
+    const unsub = onValue(emergencyRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const val = snapshot.val();
+        setGlobalEmergencyStatus(val === 'active' ? 'active' : 'normal');
+      } else {
+        setGlobalEmergencyStatus('normal');
+      }
+    });
+    return () => off(emergencyRef);
+  }, []);
 
   const sidebarItems: SidebarItem[] = [
     {
       id: 'overview',
       label: 'Overview',
       icon: <LayoutDashboard className="w-4 h-4" />,
+    },
+    {
+      id: 'situation',
+      label: 'Mall Situation',
+      icon: <Compass className="w-4 h-4 text-blue-600" />,
+    },
+    {
+      id: 'incidents',
+      label: 'Incident Alerts',
+      icon: <AlertTriangle className="w-4 h-4 text-red-500" />,
     },
     {
       id: 'floorplan',
@@ -139,6 +177,65 @@ export const MallDashboard: React.FC = () => {
     loadData();
   }, [mallId, getToken]);
 
+  // Real-time listener for incidents to reflect emergency alerts & latest notifications on Dashboard
+  useEffect(() => {
+    if (!mallId) return;
+
+    if (database) {
+      const incRef = ref(database, `malls/${mallId}/incidents`);
+      const unsubscribe = onValue(
+        incRef,
+        (snapshot) => {
+          if (!snapshot.exists()) {
+            setActiveIncidents([]);
+            setRecentAlerts([]);
+            return;
+          }
+          const data = snapshot.val();
+          const list: IncidentRecord[] = (Object.values(data || {}) as IncidentRecord[]).filter(
+            (i: any) => Boolean(i && typeof i === 'object' && i.incidentId)
+          );
+          list.sort((a, b) => new Date(b.detectedAt || b.createdAt || 0).getTime() - new Date(a.detectedAt || a.createdAt || 0).getTime());
+
+          const active = list.filter(
+            (i) => i.status === 'DETECTED' || i.status === 'ACKNOWLEDGED' || i.status === 'INVESTIGATING'
+          );
+          setActiveIncidents(active);
+          setRecentAlerts(list.slice(0, 4));
+        },
+        (err) => {
+          console.warn('[MallDashboard] RTDB incidents listener error:', err);
+        }
+      );
+
+      return () => {
+        off(incRef);
+      };
+    } else {
+      // REST fallback
+      async function fetchIncidents() {
+        try {
+          const token = await getToken();
+          if (!token) return;
+          const res = await fetch(`${API_BASE_URL}/api/malls/${mallId}/incidents?limit=10`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const json = await res.json();
+            const list: IncidentRecord[] = json.data?.incidents || [];
+            list.sort((a, b) => new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime());
+            const active = list.filter(
+              (i) => i.status === 'DETECTED' || i.status === 'ACKNOWLEDGED' || i.status === 'INVESTIGATING'
+            );
+            setActiveIncidents(active);
+            setRecentAlerts(list.slice(0, 4));
+          }
+        } catch (_) {}
+      }
+      fetchIncidents();
+    }
+  }, [mallId, getToken]);
+
   const activeMallInfo = mallInfo || authMallInfo;
   const displayName = profile?.displayName || user?.displayName || 'Mall Manager';
   const mallName = activeMallInfo?.name || profile?.mallName || authMallName || 'Assigned Shopping Mall';
@@ -148,7 +245,18 @@ export const MallDashboard: React.FC = () => {
   return (
     <div className="h-screen w-screen bg-slate-50 flex flex-col overflow-hidden antialiased text-slate-800">
       {/* Top Navigation Header: Logo + Title on left, Avatar + Display Name + Dropdown on right */}
-      <AppHeader />
+      <AppHeader
+        onSelectIncident={(incId) => {
+          setSelectedIncidentId(incId);
+          setActiveTab('incidents');
+        }}
+        onNewNotificationAlert={(notif) => {
+          setIncomingToast(notif);
+          setTimeout(() => {
+            setIncomingToast((prev) => (prev?.notificationId === notif.notificationId ? null : prev));
+          }, 8000);
+        }}
+      />
 
       {/* Main Container with Collapsible Fixed Sidebar */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -156,7 +264,7 @@ export const MallDashboard: React.FC = () => {
         <AppSidebar
           items={sidebarItems}
           activeId={activeTab}
-          onSelect={(id) => setActiveTab(id as 'overview' | 'floorplan')}
+          onSelect={(id) => setActiveTab(id as 'overview' | 'situation' | 'floorplan' | 'cameras' | 'incidents')}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
         />
@@ -164,7 +272,11 @@ export const MallDashboard: React.FC = () => {
         {/* Content Pane */}
         <main
           className={`flex-1 h-full min-h-0 ${
-            activeTab === 'floorplan' ? 'p-2.5 overflow-hidden flex flex-col' : 'p-3.5 sm:p-4 overflow-hidden flex flex-col justify-between gap-3'
+            activeTab === 'floorplan'
+              ? 'p-2.5 overflow-hidden flex flex-col'
+              : activeTab === 'overview'
+              ? 'p-3.5 sm:p-4 overflow-hidden flex flex-col justify-between gap-3'
+              : 'p-3.5 sm:p-4 overflow-y-auto flex flex-col'
           }`}
         >
           {/* OVERVIEW TAB — Fitted to Screen with No Scroll */}
@@ -265,24 +377,58 @@ export const MallDashboard: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                {/* Card 4: Emergency Alert (No default / Calm Status) */}
-                <Card className="bg-white border-slate-200/90 shadow-xs">
-                  <CardContent className="p-3.5 flex items-center justify-between">
-                    <div className="min-w-0 pr-2">
-                      <p className="text-[11px] font-medium text-slate-500">Emergency Alert</p>
-                      <p className="text-base font-bold text-emerald-700 mt-0.5 truncate">
-                        No Active Alerts
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        Normal Operational Mode
-                      </p>
-                    </div>
-                    <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                      <ShieldCheck className="w-4 h-4" />
-                    </div>
-                  </CardContent>
-                </Card>
+                {/* Card 4: Emergency Alert Card (Dynamic Red Card on Active Hazard or Global Emergency) */}
+                {activeIncidents.length > 0 || globalEmergencyStatus === 'active' ? (
+                  <Card
+                    onClick={() => setActiveTab('incidents')}
+                    className="bg-red-600 border-red-700 text-white shadow-md hover:bg-red-700 transition-all cursor-pointer animate-pulse group"
+                  >
+                    <CardContent className="p-3.5 flex items-center justify-between">
+                      <div className="min-w-0 pr-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-red-100">
+                            Emergency Alert Active
+                          </p>
+                        </div>
+                        <p className="text-base font-extrabold text-white mt-0.5 truncate">
+                          {activeIncidents.length > 0
+                            ? `${activeIncidents.length} Active Hazard${activeIncidents.length > 1 ? 's' : ''}`
+                            : 'Active Hazard Alert'}
+                        </p>
+                        <p className="text-[11px] text-red-100 mt-0.5 truncate font-medium">
+                          {activeIncidents[0]
+                            ? `${(activeIncidents[0].detectionType || 'HAZARD').toUpperCase()} at ${activeIncidents[0].cameraName || 'Facility'} →`
+                            : 'Facility emergency active →'}
+                        </p>
+                      </div>
+                      <div className="w-9 h-9 rounded-lg bg-white/20 text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <Flame className="w-5 h-5 animate-bounce" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card
+                    onClick={() => setActiveTab('incidents')}
+                    className="bg-white border-slate-200/90 shadow-xs hover:border-slate-300 transition-all cursor-pointer"
+                  >
+                    <CardContent className="p-3.5 flex items-center justify-between">
+                      <div className="min-w-0 pr-2">
+                        <p className="text-[11px] font-medium text-slate-500">Emergency Alert</p>
+                        <p className="text-base font-bold text-emerald-700 mt-0.5 truncate">
+                          No Active Alerts
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          Normal Operational Mode
+                        </p>
+                      </div>
+                      <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                        <ShieldCheck className="w-4 h-4" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
 
               {/* 3. Bottom Panels: Floor Map, Facility Information, Notifications */}
@@ -392,45 +538,126 @@ export const MallDashboard: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                {/* Panel 3: Notifications */}
+                {/* Panel 3: Notifications & Latest 4 Alerts */}
                 <Card className="bg-white border-slate-200/90 shadow-xs flex flex-col overflow-hidden">
-                  <CardHeader className="p-3.5 pb-2 border-b border-slate-100 shrink-0">
-                    <CardTitle className="text-xs font-bold text-slate-900 flex items-center gap-2 uppercase tracking-wider">
-                      <Bell className="w-3.5 h-3.5 text-blue-600" />
-                      Notifications &amp; Alerts
-                    </CardTitle>
-                    <CardDescription className="text-[11px] text-slate-500">
-                      Real-time operational system status
-                    </CardDescription>
+                  <CardHeader className="p-3.5 pb-2 border-b border-slate-100 shrink-0 flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle className="text-xs font-bold text-slate-900 flex items-center gap-2 uppercase tracking-wider">
+                        <Bell className="w-3.5 h-3.5 text-blue-600" />
+                        Notifications &amp; Alerts
+                      </CardTitle>
+                      <CardDescription className="text-[11px] text-slate-500">
+                        {recentAlerts.length > 0 ? `Latest ${recentAlerts.length} hazard alerts` : 'Real-time operational system status'}
+                      </CardDescription>
+                    </div>
+                    {recentAlerts.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setActiveTab('incidents')}
+                        className="text-[11px] text-blue-600 hover:text-blue-800 hover:bg-blue-50 h-7 px-2"
+                      >
+                        View All →
+                      </Button>
+                    )}
                   </CardHeader>
 
                   <CardContent className="p-3.5 flex-1 min-h-0 overflow-y-auto space-y-2 text-xs">
-                    <div className="p-2 rounded-lg bg-emerald-50/70 border border-emerald-200/80 text-[11px] text-emerald-800 flex items-start gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                      <div>
-                        <div className="font-semibold">Floor Plan Synchronized</div>
-                        <div className="text-emerald-700/80 text-[10px]">Current layout preserved on cloud database.</div>
+                    {recentAlerts.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-6 text-slate-400 text-center">
+                        <ShieldCheck className="w-8 h-8 text-emerald-400 mb-1.5" />
+                        <p className="text-xs font-semibold text-slate-700">No Active Alerts</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">All surveillance zones report clear status.</p>
                       </div>
-                    </div>
+                    ) : (
+                      recentAlerts.map((alert) => {
+                        const isHazard = alert.detectionType?.toLowerCase().includes('fire') || alert.detectionType?.toLowerCase().includes('smoke');
+                        const isUnresolved = alert.status === 'DETECTED' || alert.status === 'INVESTIGATING';
 
-                    <div className="p-2 rounded-lg bg-blue-50/70 border border-blue-200/80 text-[11px] text-blue-800 flex items-start gap-2">
-                      <Layers className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
-                      <div>
-                        <div className="font-semibold">Building Quota Allocated</div>
-                        <div className="text-blue-700/80 text-[10px]">{allowedFloorsLabel} active for management.</div>
-                      </div>
-                    </div>
+                        return (
+                          <div
+                            key={alert.incidentId}
+                            onClick={() => {
+                              setSelectedIncidentId(alert.incidentId);
+                              setActiveTab('incidents');
+                            }}
+                            className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer flex items-start gap-2.5 group ${
+                              isHazard && isUnresolved
+                                ? 'bg-red-50/80 border-red-200 hover:bg-red-100/90 hover:border-red-300'
+                                : 'bg-slate-50 border-slate-200 hover:bg-blue-50/70 hover:border-blue-200'
+                            }`}
+                          >
+                            <div
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                                isHazard && isUnresolved
+                                  ? 'bg-red-600 text-white animate-pulse'
+                                  : 'bg-slate-200 text-slate-700 group-hover:bg-blue-600 group-hover:text-white'
+                              }`}
+                            >
+                              {isHazard ? (
+                                <Flame className="w-3.5 h-3.5" />
+                              ) : (
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                              )}
+                            </div>
 
-                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200/80 text-[11px] text-slate-700 flex items-start gap-2">
-                      <ShieldCheck className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
-                      <div>
-                        <div className="font-semibold">All Egress Routes Clear</div>
-                        <div className="text-slate-500 text-[10px]">No emergency alerts or blockages reported.</div>
-                      </div>
-                    </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <span
+                                  className={`font-bold text-xs truncate ${
+                                    isHazard && isUnresolved ? 'text-red-900' : 'text-slate-900 group-hover:text-blue-700'
+                                  }`}
+                                >
+                                  {alert.detectionType?.toUpperCase()} Alert
+                                </span>
+                                <span
+                                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                                    alert.status === 'DETECTED'
+                                      ? 'bg-red-600 text-white'
+                                      : alert.status === 'RESOLVED'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-amber-100 text-amber-800'
+                                  }`}
+                                >
+                                  {alert.status}
+                                </span>
+                              </div>
+
+                              <p className="text-[11px] text-slate-600 truncate mt-0.5">
+                                Camera: <span className="font-semibold text-slate-800">{alert.cameraName || 'CCTV'}</span>{alert.roomName ? ` · ${alert.roomName}` : ''}
+                              </p>
+
+                              <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 font-mono">
+                                <Clock className="w-2.5 h-2.5 text-slate-400" />
+                                {formatDateTime(alert.detectedAt)}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                   </CardContent>
                 </Card>
               </div>
+            </div>
+          )}
+
+          {/* MALL SITUATION BLUEPRINT TAB */}
+          {activeTab === 'situation' && (
+            <div className="flex-1 min-h-0 animate-in fade-in duration-200">
+              {!mallId ? (
+                <div className="flex flex-col items-center justify-center py-24 text-slate-400 gap-3">
+                  <Building2 className="w-12 h-12 text-slate-300" />
+                  <p className="text-sm font-medium text-slate-600">No shopping mall assigned to this account.</p>
+                  <p className="text-xs text-slate-400">Please contact your platform administrator.</p>
+                </div>
+              ) : (
+                <MallSituation
+                  totalFloors={effectiveFloors}
+                  onNavigateToCameras={() => setActiveTab('cameras')}
+                  onNavigateToFloorPlan={() => setActiveTab('floorplan')}
+                />
+              )}
             </div>
           )}
 
@@ -449,9 +676,29 @@ export const MallDashboard: React.FC = () => {
             </div>
           )}
 
+          {/* INCIDENTS & HAZARDS TAB (M7) */}
+          {activeTab === 'incidents' && (
+            <div className="flex-1 min-h-0 animate-in fade-in duration-200">
+              {!mallId ? (
+                <div className="flex flex-col items-center justify-center py-24 text-slate-400 gap-3">
+                  <Building2 className="w-12 h-12 text-slate-300" />
+                  <p className="text-sm font-medium text-slate-600">No shopping mall assigned to this account.</p>
+                  <p className="text-xs text-slate-400">Please contact your platform administrator.</p>
+                </div>
+              ) : (
+                <IncidentManagement
+                  mallId={mallId}
+                  getToken={getToken}
+                  selectedIncidentId={selectedIncidentId}
+                  onClearSelectedIncident={() => setSelectedIncidentId(null)}
+                />
+              )}
+            </div>
+          )}
+
           {/* CAMERAS & SURVEILLANCE TAB */}
           {activeTab === 'cameras' && (
-            <div className="h-full flex flex-col animate-in fade-in duration-200">
+            <div className="flex-1 min-h-0 animate-in fade-in duration-200">
               {!mallId ? (
                 <div className="flex flex-col items-center justify-center py-24 text-slate-400 gap-3">
                   <Building2 className="w-12 h-12 text-slate-300" />
@@ -462,12 +709,53 @@ export const MallDashboard: React.FC = () => {
                 <CameraManagement
                   totalFloors={effectiveFloors}
                   onNavigateToFloorPlan={() => setActiveTab('floorplan')}
+                  onNavigateToSituation={() => setActiveTab('situation')}
                 />
               )}
             </div>
           )}
         </main>
       </div>
+
+      {/* Floating Emergency Toast Alert (M7) */}
+      {incomingToast && (
+        <div className="fixed top-20 right-6 z-50 max-w-md w-full bg-red-600 text-white rounded-xl shadow-2xl p-4 flex items-start gap-3 border-2 border-white/20 animate-in slide-in-from-top-4 duration-200 cursor-pointer hover:bg-red-700 transition-colors">
+          <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+            <Flame className="w-5 h-5 text-white animate-bounce" />
+          </div>
+          <div
+            className="flex-1 min-w-0"
+            onClick={() => {
+              if (incomingToast.incidentId) {
+                setSelectedIncidentId(incomingToast.incidentId);
+              }
+              setActiveTab('incidents');
+              setIncomingToast(null);
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-xs uppercase tracking-wider bg-white/25 px-2 py-0.5 rounded">
+                Emergency Alert
+              </span>
+              <span className="text-[10px] text-white/80">Just now</span>
+            </div>
+            <p className="text-sm font-semibold mt-1 leading-snug">{incomingToast.message}</p>
+            <p className="text-xs text-white/80 mt-1 flex items-center gap-1 underline">
+              Click to inspect hazard & evidence &rarr;
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIncomingToast(null);
+            }}
+            className="text-white/70 hover:text-white p-1"
+          >
+            &times;
+          </button>
+        </div>
+      )}
     </div>
   );
 };

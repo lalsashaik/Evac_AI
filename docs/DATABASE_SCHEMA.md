@@ -145,8 +145,10 @@
           "confidence": 0.87,
           "detectedAt": "ISO8601",
           "createdAt": "ISO8601",
-          "snapshotUrl": "string",
-          "snapshotPath": "string",
+          "evidenceId": "string | null",
+          "evidenceFileName": "string | null",
+          "evidenceRelativePath": "string | null",
+          "evidenceAvailable": true,
           "status": "DETECTED | ACKNOWLEDGED | INVESTIGATING | RESOLVED | FALSE_ALARM",
           "boundingBoxes": [
             {
@@ -444,17 +446,23 @@ malls/{mallId}/incidentGroups/{groupKey}
 
 ---
 
-## 7. Firebase Storage Structure
+## 7. Local Evidence File Storage (No Firebase Storage)
 
-```
-gs://{project-id}.appspot.com/
+> **Critical Architecture Decision (Milestone 7):** EvacAI does **not** use Firebase Storage for incident snapshots. Firebase Realtime Database is used strictly for JSON application metadata. Binary images and Base64 strings are never stored in the database.
+
+Incident snapshot JPEG images are saved locally to the machine hosting EvacAI within the directory configured by `EVACAI_EVIDENCE_DIR`:
+
+```text
+EVACAI_EVIDENCE_DIR/
 └── incidents/
     └── {mallId}/
-        └── {incidentId}/
-            └── snapshot.jpg
+        └── {evidenceId}.jpg
 ```
 
-Each incident stores exactly one snapshot image. The path is deterministic given `mallId` and `incidentId`, making cleanup straightforward.
+- **Persistence:** Snapshot JPEG files are written to local disk by the Python AI detection service upon verified fire/smoke detection.
+- **Reference in Database:** Each incident record in Firebase Realtime Database holds only safe references (`evidenceId`, `evidenceFileName`, `evidenceRelativePath`, and `evidenceAvailable: boolean`).
+- **Access Control:** Snapshot files are not publicly exposed. Management dashboards securely stream evidence images through the authenticated backend endpoint `GET /api/malls/{mallId}/incidents/{incidentId}/evidence` using verified Firebase ID tokens and mall role authorization.
+- **Path Traversal Protection:** The backend strictly verifies that resolved image paths reside within `EVACAI_EVIDENCE_DIR` before serving files.
 
 ---
 

@@ -238,28 +238,56 @@ Security rules enforce access control for **direct Firebase client SDK access** 
 
 ---
 
-## 7. Firebase Storage Security Rules
+## 7. Local Evidence Security & Authenticated Retrieval Endpoint
+
+> **Critical Architecture Decision:** EvacAI does **not** use Firebase Storage for incident snapshots or any other image files, completely avoiding the Blaze pay-as-you-go billing dependency for this prototype. Furthermore, binary images and Base64 strings are **never** stored in the Firebase Realtime Database.
+>
+> Actual snapshot JPEG files are stored locally in a shared filesystem directory configured via `EVACAI_EVIDENCE_DIR`.
+
+To ensure mall-level data isolation without public static file exposure, all evidence retrieval is routed through a protected backend endpoint:
 
 ```
-rules_version = '2';
-service firebase.storage {
-  match /b/{bucket}/o {
-
-    // Incident snapshots: readable by authenticated users with correct mallId
-    match /incidents/{mallId}/{incidentId}/{fileName} {
-      allow read: if request.auth != null &&
-                     (request.auth.token.role == 'superadmin' ||
-                      request.auth.token.mallId == mallId);
-      allow write: false; // Only backend/AI service can write (via Admin SDK)
-    }
-
-    // Deny all other paths
-    match /{allPaths=**} {
-      allow read, write: if false;
-    }
-  }
-}
+GET /api/malls/{mallId}/incidents/{incidentId}/evidence
 ```
+
+### 7.1 Access Control & Authorization Flow
+
+```
+Client (Authorization: Bearer <ID_TOKEN>)
+       │
+       ▼
+1. verifyFirebaseToken: Validates Firebase JWT signature & expiry
+       │
+       ▼
+2. requireRole('mall_management'): Ensures caller is mall management or superadmin
+       │
+       ▼
+3. requireMallAccess: Verifies caller's assigned mallId matches route :mallId
+       │
+       ▼
+4. Incident Ownership Verification: Fetches incident record from RTDB, verifying incident belongs to :mallId
+       │
+       ▼
+5. Path Traversal & Existence Check: Validates evidenceId against traversal attacks and verifies file on disk
+       │
+       ▼
+Response: binary JPEG stream (Content-Type: image/jpeg)
+```
+
+### 7.2 Path Traversal Defenses
+
+The backend enforces strict filesystem boundaries when resolving evidence files:
+
+1. **Identifier Sanitization:** The `evidenceId` and `evidenceFileName` parameters are rejected immediately if they contain directory traversal sequences (`..`), forward slashes (`/`), or backslashes (`\`).
+2. **Canonical Path Resolution:** The server resolves the target path using `path.resolve(evidenceDir, 'incidents', cleanMallId, cleanFileName)`.
+3. **Directory Boundary Check:** The resolved path is verified to strictly start with the canonical evidence directory path:
+   ```ts
+   const resolvedPath = path.resolve(evidenceDir, 'incidents', mallId, fileName);
+   if (!resolvedPath.startsWith(path.resolve(evidenceDir))) {
+     return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Access denied: path traversal attempt detected.' } });
+   }
+   ```
+4. **Presence Verification:** `fs.existsSync(resolvedPath)` ensures missing or unwritten files return a clean `404 EVIDENCE_NOT_FOUND` rather than an unhandled server error.
 
 ---
 
@@ -269,8 +297,8 @@ service firebase.storage {
 |-------|-----------------------|
 | **Firebase Auth custom claims** | `mallId` claim embedded in signed JWT, cannot be forged. |
 | **Backend middleware** | `requireMallAccess` compares `decoded.mallId` with `:mallId` route param on every request. |
-| **Firebase Security Rules** | Client reads restricted to matching `auth.token.mallId === $mallId`. |
-| **Firebase Storage Rules** | Snapshot access restricted to matching mall ID in storage path. |
+| **Firebase Security Rules** | Client reads restricted to matching `auth.token.mallId === $mallId`. Client writes disabled (`.write: false`). |
+| **Local Evidence Access** | Protected backend endpoint validates token, role, mall ownership, and path boundaries before streaming JPEG. |
 
 No single layer is relied upon alone. If one layer is misconfigured, other layers continue to enforce isolation.
 
@@ -285,8 +313,9 @@ FIREBASE_PROJECT_ID=
 FIREBASE_CLIENT_EMAIL=
 FIREBASE_PRIVATE_KEY=
 FIREBASE_DATABASE_URL=
-FIREBASE_STORAGE_BUCKET=
+EVACAI_EVIDENCE_DIR=../evidence
 AI_SERVICE_SECRET=
+INCIDENT_COOLDOWN_SECONDS=30
 EMAIL_HOST=
 EMAIL_PORT=
 EMAIL_USER=
@@ -299,10 +328,11 @@ PORT=4000
 ```
 BACKEND_API_URL=http://localhost:4000
 AI_SERVICE_SECRET=
+EVACAI_EVIDENCE_DIR=../evidence
 FIREBASE_PROJECT_ID=
 FIREBASE_CLIENT_EMAIL=
 FIREBASE_PRIVATE_KEY=
-FIREBASE_STORAGE_BUCKET=
+FIREBASE_DATABASE_URL=
 ```
 
 **Rules:**
@@ -340,5 +370,5 @@ A disabled Firebase Auth account cannot obtain a new ID token. Existing tokens e
 | AI service uses separate secret, not user tokens | Required |
 | `.env` files excluded from git | Required |
 | Firebase Security Rules restrict client writes | Required |
-| Storage rules enforce mall-level access | Required |
+| Protected evidence endpoint enforces mall-level access & path traversal prevention | Required |
 | Superadmin created via script, no public registration | Required |

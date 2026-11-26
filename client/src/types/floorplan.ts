@@ -53,6 +53,8 @@ export interface FloorCameraMarker {
   x: number;
   y: number;
   rotation: number;
+  streamType?: string;
+  streamUrl?: string;
 }
 
 export interface FloorPlan {

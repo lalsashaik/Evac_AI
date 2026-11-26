@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CameraRecord } from '@/types/camera';
+import { CameraRecord, CameraDetectionState } from '@/types/camera';
 import {
   X,
   Play,
@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 
 interface CctvPlayerModalProps {
   camera: CameraRecord | null;
+  detectionState?: CameraDetectionState | null;
   isOpen: boolean;
   onClose: () => void;
   onNavigateToFloorPlan?: () => void;
@@ -32,6 +33,7 @@ interface CctvPlayerModalProps {
 
 export const CctvPlayerModal: React.FC<CctvPlayerModalProps> = ({
   camera,
+  detectionState,
   isOpen,
   onClose,
   onNavigateToFloorPlan,
@@ -173,6 +175,16 @@ export const CctvPlayerModal: React.FC<CctvPlayerModalProps> = ({
                 {streamStatus === 'inactive' && (
                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/15 text-amber-400 border border-amber-500/30">
                     Inactive
+                  </span>
+                )}
+                {/* Real-time AI Hazard State Pill */}
+                {detectionState?.isCurrentlyDetected ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white shadow-sm animate-pulse">
+                    🔥 {(detectionState.detectionType || 'FIRE').toUpperCase()} DETECTED
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    🛡️ ALL CLEAR (NO FIRE)
                   </span>
                 )}
               </div>
@@ -328,6 +340,14 @@ export const CctvPlayerModal: React.FC<CctvPlayerModalProps> = ({
 
                 <div className="bg-black/60 px-2.5 py-1 rounded backdrop-blur-xs border border-white/10 text-right space-y-0.5">
                   <div className="text-[10px] text-emerald-400 font-semibold">1080P · 25.0 FPS</div>
+                  <div className={`text-[9px] flex items-center justify-end gap-1 font-mono ${detectionState?.isCurrentlyDetected ? 'text-red-400 font-bold' : 'text-emerald-300 font-semibold'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${detectionState?.isCurrentlyDetected ? 'bg-red-500 animate-bounce' : 'bg-emerald-400'}`} />
+                    <span>
+                      {detectionState?.isCurrentlyDetected
+                        ? `HAZARD: ${(detectionState.detectionType || 'FIRE').toUpperCase()}`
+                        : 'STATUS: ALL CLEAR (NO FIRE)'}
+                    </span>
+                  </div>
                   <div className="text-[9px] text-slate-400">CH-01 · EVACAI CCTV</div>
                 </div>
               </div>
